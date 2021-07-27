@@ -2,7 +2,7 @@
 
 namespace RtspClientSharp.Codecs.Video
 {
-    class H264CodecInfo : VideoCodecInfo
+    class OnvifMetadataCodecInfo : VideoCodecInfo
     {
         public byte[] SpsPpsBytes { get; set; } = Array.Empty<byte>();
     }
