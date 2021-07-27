@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using RtspClientSharp.Codecs.Video;
@@ -34,7 +35,7 @@ namespace RtspClientSharp.MediaParsers
             if (codecInfo.SpsPpsBytes == null)
                 throw new ArgumentException($"{nameof(codecInfo.SpsPpsBytes)} is null", nameof(codecInfo));
 
-            _h264Parser = new H264Parser(() => GetFrameTimestamp(_timeOffset)) {FrameGenerated = OnFrameGenerated};
+            _h264Parser = new H264Parser(() => GetFrameTimestamp(_timeOffset)) { FrameGenerated = OnFrameGenerated };
 
             if (codecInfo.SpsPpsBytes.Length != 0)
                 _h264Parser.Parse(new ArraySegment<byte>(codecInfo.SpsPpsBytes), false);
@@ -48,13 +49,12 @@ namespace RtspClientSharp.MediaParsers
 
             if (!markerBit && timeOffset != _timeOffset)
                 _h264Parser.TryGenerateFrame();
-            
+
             _timeOffset = timeOffset;
 
-            PackModeType packMode = (PackModeType) (byteSegment.Array[byteSegment.Offset] & 0x1F);
-            
-            switch (packMode)
-            {
+            PackModeType packMode = (PackModeType)(byteSegment.Array[byteSegment.Offset] & 0x1F);
+
+            switch (packMode) {
                 case PackModeType.FU_A:
                     ParseFU(byteSegment, 0, markerBit);
                     break;
@@ -95,12 +95,11 @@ namespace RtspClientSharp.MediaParsers
             bool startFlag = (fuHeader & 0x80) != 0;
             bool endFlag = (fuHeader & 0x40) != 0;
 
-            if (startFlag)
-            {
+            if (startFlag) {
                 int type = (fuHeader & 0x1F) | (byteSegment.Array[byteSegment.Offset] & 0xE0);
 
                 offset += donFieldSize;
-                byteSegment.Array[offset] = (byte) type;
+                byteSegment.Array[offset] = (byte)type;
 
                 var nalUnitSegment = new ArraySegment<byte>(byteSegment.Array, offset,
                     byteSegment.Offset + byteSegment.Count - offset);
@@ -111,8 +110,7 @@ namespace RtspClientSharp.MediaParsers
 
                 _nalStream.Write(nalUnitSegment.Array, nalUnitSegment.Offset, nalUnitSegment.Count);
 
-                if (endFlag)
-                {
+                if (endFlag) {
                     _h264Parser.Parse(nalUnitSegment, markerBit);
                     _waitForStartFu = true;
                 }
@@ -129,8 +127,7 @@ namespace RtspClientSharp.MediaParsers
 
             _nalStream.Write(byteSegment.Array, offset, byteSegment.Offset + byteSegment.Count - offset);
 
-            if (endFlag)
-            {
+            if (endFlag) {
                 var nalUnitSegment = new ArraySegment<byte>(_nalStream.GetBuffer(), 0, (int)_nalStream.Position);
                 _nalStream.Position = 0;
                 _h264Parser.Parse(nalUnitSegment, markerBit);
@@ -146,8 +143,7 @@ namespace RtspClientSharp.MediaParsers
             int startOffset = byteSegment.Offset + 1 + donFieldSize;
             int endOffset = byteSegment.Offset + byteSegment.Count;
 
-            while (startOffset < endOffset)
-            {
+            while (startOffset < endOffset) {
                 int nalUnitSize = BigEndianConverter.ReadUInt16(byteSegment.Array, startOffset);
 
                 startOffset += 2;
@@ -170,8 +166,7 @@ namespace RtspClientSharp.MediaParsers
 
             startOffset += 1 + DecodingOrderNumberFieldSize;
 
-            while (startOffset < endOffset)
-            {
+            while (startOffset < endOffset) {
                 int nalUnitSize = BigEndianConverter.ReadUInt16(byteSegment.Array, startOffset);
 
                 startOffset += 2 + DondFieldSize + tsOffsetFieldSize;
@@ -183,5 +178,49 @@ namespace RtspClientSharp.MediaParsers
                 _h264Parser.Parse(nalUnitSegment, markerBit && startOffset >= endOffset);
             }
         }
+    }
+    class OnvifMetadataPayloadParser : MediaPayloadParser
+    {
+        RawMetadataFrame frame;
+        List<byte[]> data = new List<byte[]>();
+        public OnvifMetadataPayloadParser()
+        {
+
+        }
+
+        public override void Parse(TimeSpan timeOffset, ArraySegment<byte> byteSegment, bool markerBit)
+        {
+            if (frame == null) {
+                frame = new RawMetadataFrame(GetFrameTimestamp(timeOffset), byteSegment);
+            }
+            if (markerBit && data.Count == 0) {
+                OnFrameGenerated(frame);
+                frame = null;
+                return;
+            }
+            var a = new byte[byteSegment.Count];
+            Array.Copy(byteSegment.Array, byteSegment.Offset, a, 0, byteSegment.Count);
+            data.Add(a);
+
+            if (markerBit) {
+                int len = 0;
+                foreach (var d in data) len += d.Length;
+                a = new byte[len];
+                len = 0;
+                foreach (var d in data) {
+                    Array.Copy(d, 0, a, len, d.Length);
+                    len += d.Length;
+                }
+                OnFrameGenerated(new RawMetadataFrame(frame.Timestamp, new ArraySegment<byte>(a)));
+                frame = null;
+                data.Clear();
+            }
+        }
+
+        public override void ResetState()
+        {
+            frame = null;
+        }
+
     }
 }

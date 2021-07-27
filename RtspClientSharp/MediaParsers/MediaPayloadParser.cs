@@ -48,6 +48,8 @@ namespace RtspClientSharp.MediaParsers
                     return new G726AudioPayloadParser(g726CodecInfo);
                 case PCMCodecInfo pcmCodecInfo:
                     return new PCMAudioPayloadParser(pcmCodecInfo);
+                case OnvifMetadataCodecInfo x:
+                    return new OnvifMetadataPayloadParser();
                 default:
                     throw new ArgumentOutOfRangeException(nameof(codecInfo),
                         $"Unsupported codec: {codecInfo.GetType().Name}");
