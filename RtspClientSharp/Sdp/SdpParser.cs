@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using RtspClientSharp.Codecs;
 using RtspClientSharp.Codecs.Audio;
+using RtspClientSharp.Codecs.Metadata;
 using RtspClientSharp.Codecs.Video;
 using RtspClientSharp.RawFrames.Video;
 using RtspClientSharp.Utils;
@@ -216,6 +218,8 @@ namespace RtspClientSharp.Sdp
 
             if (payloadFormatInfo.CodecInfo is H264CodecInfo h264CodecInfo)
                 ParseH264FormatAttributes(formatAttributes, h264CodecInfo);
+            else if (payloadFormatInfo.CodecInfo is H265CodecInfo h265CodecInfo)
+                ParseH265FormatAttributes(formatAttributes, h265CodecInfo);
             else if (payloadFormatInfo.CodecInfo is AACCodecInfo aacCodecInfo)
                 ParseAACFormatAttributes(formatAttributes, aacCodecInfo);
         }
@@ -234,10 +238,17 @@ namespace RtspClientSharp.Sdp
 
             if (commaIndex == -1)
             {
-                byte[] sps = RawH264Frame.StartMarker.Concat(
-                    Convert.FromBase64String(spropParametersSetValue)).ToArray();
-
-                h264CodecInfo.SpsPpsBytes = sps;
+                var buffer = new byte[spropParametersSetValue.Length];
+                var isBase64 = Convert.TryFromBase64String(
+                    spropParametersSetValue.PadRight(spropParametersSetValue.Length / 4 * 4 + (spropParametersSetValue.Length % 4 == 0 ? 0 : 4), '='),
+                    buffer,
+                    out _);
+                // to fix bug with honeywell cameras
+                if(isBase64 && spropParametersSetValue.ToLowerInvariant() != "h264")
+                {
+                    byte[] sps = RawH264Frame.StartMarker.Concat(buffer).ToArray();
+                    h264CodecInfo.SpsPpsBytes = sps;
+                }
             }
             else
             {
@@ -250,6 +261,36 @@ namespace RtspClientSharp.Sdp
                     Convert.FromBase64String(spropParametersSetValue.Substring(commaIndex)));
 
                 h264CodecInfo.SpsPpsBytes = sps.Concat(pps).ToArray();
+            }
+        }
+
+        private static void ParseH265FormatAttributes(string[] formatAttributes, H265CodecInfo h265CodecInfo)
+        {
+            string spropSpsSet = formatAttributes.FirstOrDefault(fa =>
+                fa.StartsWith("sprop-sps", StringComparison.InvariantCultureIgnoreCase));
+
+            if (spropSpsSet != null)
+            {
+                string spropSpsSetValue = GetFormatParameterValue(spropSpsSet);
+                h265CodecInfo.SpsBytes = RawH265Frame.StartMarker.Concat(Convert.FromBase64String(spropSpsSetValue)).ToArray();
+            }
+
+            string spropPpsSet = formatAttributes.FirstOrDefault(fa =>
+                fa.StartsWith("sprop-pps", StringComparison.InvariantCultureIgnoreCase));
+
+            if (spropPpsSet != null)
+            {
+                string spropPpsSetValue = GetFormatParameterValue(spropPpsSet);
+                h265CodecInfo.PpsBytes = RawH265Frame.StartMarker.Concat(Convert.FromBase64String(spropPpsSetValue)).ToArray();
+            }
+
+            string spropVpsSet = formatAttributes.FirstOrDefault(fa =>
+                fa.StartsWith("sprop-vps", StringComparison.InvariantCultureIgnoreCase));
+
+            if (spropVpsSet != null)
+            {
+                string spropVpsSetValue = GetFormatParameterValue(spropVpsSet);
+                h265CodecInfo.VpsBytes = RawH265Frame.StartMarker.Concat(Convert.FromBase64String(spropVpsSetValue)).ToArray();
             }
         }
 
@@ -329,7 +370,7 @@ namespace RtspClientSharp.Sdp
                     codecInfo = new H264CodecInfo();
                     break;
                 case 107:
-                    codecInfo = new OnvifMetadataCodecInfo();
+                    codecInfo = new MetadataCodecInfo();
                     break;
 
             }
@@ -345,9 +386,9 @@ namespace RtspClientSharp.Sdp
             if (codecName == "H264")
                 return new H264CodecInfo();
 
-            //if (codecName.EndsWith("METADATA"))
+            // https://github.com/tenco-rd/RtspClientSharp/commit/917cc76b9542dda182131db055f9687f080fe10a
             if (codecName == "VND.ONVIF.METADATA")
-                return new OnvifMetadataCodecInfo();
+                return new MetadataCodecInfo();
 
             bool isPcmu = codecName == "PCMU";
             bool isPcma = codecName == "PCMA";

@@ -1,6 +1,7 @@
 ﻿using System;
 using RtspClientSharp.Codecs;
 using RtspClientSharp.Codecs.Audio;
+using RtspClientSharp.Codecs.Metadata;
 using RtspClientSharp.Codecs.Video;
 using RtspClientSharp.RawFrames;
 
@@ -8,7 +9,7 @@ namespace RtspClientSharp.MediaParsers
 {
     abstract class MediaPayloadParser : IMediaPayloadParser
     {
-        private DateTime _baseTime = DateTime.MinValue;
+        public DateTime BaseTime { get; set; }
 
         public Action<RawFrame> FrameGenerated { get; set; }
 
@@ -18,13 +19,13 @@ namespace RtspClientSharp.MediaParsers
 
         protected DateTime GetFrameTimestamp(TimeSpan timeOffset)
         {
+            if (BaseTime == default)
+                BaseTime = DateTime.UtcNow;
+
             if (timeOffset == TimeSpan.MinValue)
-                return DateTime.UtcNow;
+                return BaseTime;
 
-            if (_baseTime == DateTime.MinValue)
-                _baseTime = DateTime.UtcNow;
-
-            return _baseTime + timeOffset;
+            return BaseTime + timeOffset;
         }
 
         protected virtual void OnFrameGenerated(RawFrame e)
@@ -38,6 +39,8 @@ namespace RtspClientSharp.MediaParsers
             {
                 case H264CodecInfo h264CodecInfo:
                     return new H264VideoPayloadParser(h264CodecInfo);
+                case H265CodecInfo h265CodecInfo:
+                    return new H265VideoPayloadParser(h265CodecInfo);
                 case MJPEGCodecInfo _:
                     return new MJPEGVideoPayloadParser();
                 case AACCodecInfo aacCodecInfo:
@@ -48,8 +51,8 @@ namespace RtspClientSharp.MediaParsers
                     return new G726AudioPayloadParser(g726CodecInfo);
                 case PCMCodecInfo pcmCodecInfo:
                     return new PCMAudioPayloadParser(pcmCodecInfo);
-                case OnvifMetadataCodecInfo x:
-                    return new OnvifMetadataPayloadParser();
+                case MetadataCodecInfo _:
+                    return new RawMetadataPayloadParser();
                 default:
                     throw new ArgumentOutOfRangeException(nameof(codecInfo),
                         $"Unsupported codec: {codecInfo.GetType().Name}");

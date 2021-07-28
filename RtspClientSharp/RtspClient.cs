@@ -48,13 +48,24 @@ namespace RtspClientSharp
         /// <exception cref="RtspClientException"></exception>
         public async Task ConnectAsync(CancellationToken token)
         {
+            await ConnectAsync(default, token);
+        }
+
+        /// <summary>
+        /// Connect to endpoint and start RTSP session
+        /// </summary>
+        /// <exception cref="OperationCanceledException"></exception>
+        /// <exception cref="InvalidCredentialException"></exception>
+        /// <exception cref="RtspClientException"></exception>
+        public async Task ConnectAsync(DateTime initialTimestamp, CancellationToken token)
+        {
             await Task.Run(async () =>
             {
                 _rtspClientInternal = CreateRtspClientInternal(ConnectionParameters, _transportClientProvider);
 
                 try
                 {
-                    Task connectionTask = _rtspClientInternal.ConnectAsync(token);
+                    Task connectionTask = _rtspClientInternal.ConnectAsync(initialTimestamp, token);
 
                     if (connectionTask.IsCompleted)
                     {
@@ -110,7 +121,7 @@ namespace RtspClientSharp
         }
 
         /// <summary>
-        /// Receive frames. 
+        /// Receive frames.
         /// Should be called after successful connection to endpoint or InvalidOperationException will be thrown
         /// </summary>
         /// <exception cref="OperationCanceledException"></exception>
@@ -154,7 +165,7 @@ namespace RtspClientSharp
                         if (result.IsCanceled)
                         {
                             if (ConnectionParameters.CancelTimeout == TimeSpan.Zero ||
-                                await Task.WhenAny(receiveInternalTask, 
+                                await Task.WhenAny(receiveInternalTask,
                                     Task.Delay(ConnectionParameters.CancelTimeout, CancellationToken.None)) != receiveInternalTask)
                                 _rtspClientInternal.Dispose();
 
